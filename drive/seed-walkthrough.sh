@@ -15,7 +15,7 @@
 set -u
 SOCK="${BROLL_SOCK:-brollrec}"
 SESSION="${BROLL_SESSION:-seedlab}"
-SEED="${SEED_FILE:-$HOME/workspace/plow-terminal-broll/examples/sample.seed.md}"
+SEED="${SEED_FILE:-$HOME/workspace/plow-seedlab-terminal-broll/examples/sample.seed.md}"
 P='\033[38;5;156m❯\033[0m'   # volt-green prompt
 
 type_cmd() { printf "$P "; for ((i=0;i<${#1};i++)); do printf '%s' "${1:$i:1}"; sleep 0.03; done; printf '\n'; sleep 0.4; }

@@ -1,4 +1,4 @@
-# SEED: plow-terminal-broll
+# SEED: plow-seedlab-terminal-broll
 
 > seed-format: 1 · **generative**
 > One file = the whole recipe for a CEO-approved **TRUE 16:9 (1920×1080) terminal B-roll**.

@@ -1,4 +1,4 @@
-# plow-terminal-broll
+# plow-seedlab-terminal-broll
 
 Reusable recipe for **TRUE 16:9 (1920×1080) terminal B-roll** — a real tmux session
 in a Dracula style, recorded and rendered so the **terminal content fills the whole
@@ -7,6 +7,13 @@ bars. This is the exact, CEO-approved method, packaged so anyone (or any agent) 
 reproduce it identically.
 
 ![what it produces: a wide Dracula tmux filling 1920×1080](docs/example-frame.png)
+
+## Get it
+
+```bash
+git clone https://github.com/delattre1/plow-seedlab-terminal-broll.git
+cd plow-seedlab-terminal-broll
+```
 
 ## One command
 
