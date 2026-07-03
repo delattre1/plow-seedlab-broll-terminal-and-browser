@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // seedrec — opt-in NATIVE browser-video recorder for seedbed UI/browser proof.
 //
-// Records a node's ttyd attach URL with Playwright's recordVideo (real .webm,
-// chromium's native screencast encoder — NO screenshot stitching).
+// Records a node's ttyd attach URL with Playwright's recordVideo (chromium's
+// native screencast encoder — NO screenshot stitching). Playwright captures to
+// VP9-in-.webm; that codec is NOT playable in Safari/QuickTime, so the .webm is
+// only the RAW intermediate. THE DEFAULT DELIVERABLE IS H.264 mp4 (<node>-full.mp4,
+// yuv420p + faststart) — the universally-playable codec. This is the STANDARD
+// output; pass `--webm-only` on stop to skip the transcode (rarely wanted).
 //
 // Lifecycle contract:
 //   - OPT-IN: seedbed terminal recording defaults to asciinema. Use seedrec only
@@ -17,7 +21,7 @@
 //
 // Commands:
 //   seedrec start  <node> --url <ttyd-url> [--width 1920] [--height 1080]
-//   seedrec stop   <node> --reason approved-retire|ceo-request [--mp4]
+//   seedrec stop   <node> --reason approved-retire|ceo-request [--webm-only]
 //   seedrec status [<node>]
 //   seedrec _daemon <node>          (internal — spawned detached by start)
 //
@@ -26,7 +30,7 @@
 //   control.json    stop signal (written by `seedrec stop`)
 //   segments/       seg-001.webm, seg-002.webm ... (>1 only after crashes)
 //   recorder.log
-//   <node>-full.webm + manifest.json   (written at stop)
+//   <node>-full.mp4   (H.264 — THE deliverable) + <node>-full.webm (raw VP9) + manifest.json
 
 import { chromium } from 'playwright';
 import fs from 'fs';
@@ -81,7 +85,9 @@ if (cmd === 'stop') {
   }
   if (!fs.existsSync(dir(node))) { console.error(`no recording dir for ${node}`); process.exit(1); }
   j(path.join(dir(node), 'control.json'),
-    { action: 'stop', reason, mp4: flag('mp4'), requested_at: new Date().toISOString() });
+    // H.264 mp4 is the DEFAULT deliverable (Safari/QuickTime can't play VP9 webm);
+    // --webm-only opts out of the transcode.
+    { action: 'stop', reason, mp4: !flag('webm-only'), requested_at: new Date().toISOString() });
   console.log(`stop signal (${reason}) written for ${node}; daemon will finalize.`);
   // wait for the manifest (finalization proof), up to 120s
   const mf = path.join(dir(node), 'manifest.json');
@@ -144,22 +150,28 @@ if (cmd === '_daemon') {
           'format=duration,size', '-of', 'json', f]).toString();
       } catch { return '{}'; }
     };
-    // Manifest FIRST (webm concat is the finalization proof — the stop CLI waits
-    // on it); the optional mp4 transcode can take minutes for long recordings and
-    // must not delay the proof. Manifest is updated again when the mp4 lands.
+    // Manifest FIRST (webm concat is the fast finalization proof — the stop CLI
+    // waits on it); the H.264 transcode can take minutes for long recordings and
+    // must not delay the proof. `video` starts as the raw webm and is REPOINTED to
+    // the mp4 below once it lands (the mp4 is the deliverable).
     const manifest = {
       node, started_at: startedAt, stopped_at: new Date().toISOString(),
-      stop_reason: reason, segments: segs, video: full,
+      stop_reason: reason, segments: segs,
+      video_webm: full,          // raw VP9 intermediate — NOT playable in Safari/QuickTime
+      video: full,               // repointed to the H.264 mp4 below (default deliverable)
       video_probe: JSON.parse(probe(full)), mp4: wantMp4 ? 'transcoding' : null,
     };
     j(path.join(D, 'manifest.json'), manifest);
     log(node, `finalized: reason=${reason} segments=${segs.length} → ${full}`);
     if (wantMp4 && segs.length) {
+      // DEFAULT DELIVERABLE: H.264 mp4 — the universally-playable codec. yuv420p +
+      // +faststart so it plays in Safari/QuickTime/browsers and streams (moov up front).
       const mp4 = path.join(D, `${node}-full.mp4`);
       execFileSync('ffmpeg', ['-y', '-i', full, '-c:v', 'libx264', '-preset', 'veryfast',
-        '-crf', '23', '-pix_fmt', 'yuv420p', mp4], { stdio: 'ignore' });
-      j(path.join(D, 'manifest.json'), { ...manifest, mp4 });
-      log(node, `mp4 transcode complete → ${mp4}`);
+        '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', mp4],
+        { stdio: 'ignore' });
+      j(path.join(D, 'manifest.json'), { ...manifest, mp4, video: mp4 });  // mp4 = primary deliverable
+      log(node, `H.264 mp4 (default deliverable) → ${mp4}`);
     }
   };
 

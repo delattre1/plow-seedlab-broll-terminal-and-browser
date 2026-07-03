@@ -12,7 +12,7 @@ now-deleted `plow-pbc/seedlab`; it is preserved here.)*
 | you want to record… | use | lives in |
 |---|---|---|
 | a **terminal / TUI** (tmux, CLI) → 16:9 mp4 | terminal recorder | [`terminal/`](terminal/) |
-| a **browser / UI** flow → `.webm` | browser recorder (`seedrec`) | [`browser/`](browser/) |
+| a **browser / UI** flow → **H.264 mp4** | browser recorder (`seedrec`) | [`browser/`](browser/) |
 
 ## Terminal recorder — [`terminal/`](terminal/)
 
@@ -32,8 +32,11 @@ Full spec + geometry math: [`terminal/SEED.md`](terminal/SEED.md). Requires macO
 
 ## Browser recorder — [`browser/`](browser/)
 
-`seedrec` — the opt-in browser/UI recorder that produces a `.webm` for seeds/tests exercising
-browser behavior (host-side Chrome + ttyd). The generative seed is
+`seedrec` — the opt-in browser/UI recorder for seeds/tests exercising browser behavior (host-side
+Chrome + ttyd). It captures via Chromium `recordVideo` (VP9 `.webm`, the raw intermediate) and, **by
+default, delivers an H.264 mp4** (`<node>-full.mp4`, `yuv420p` + `+faststart`) — the universally
+playable codec. **Safari/QuickTime cannot play VP9 webm, so always hand off the `.mp4`.** The
+generative seed is
 [`browser/seedrec.seed.md`](browser/seedrec.seed.md); the Node implementation is
 [`browser/seedrec/seedrec.mjs`](browser/seedrec/seedrec.mjs) (`start` / `status` / `stop`).
 
@@ -41,13 +44,13 @@ browser behavior (host-side Chrome + ttyd). The generative seed is
 cd browser/seedrec && npm install
 node seedrec.mjs start  <name> …            # begin recording
 node seedrec.mjs status <name>              # RECORDING?
-node seedrec.mjs stop   <name> --mp4        # finalize
+node seedrec.mjs stop   <name> --reason ceo-request   # finalize → H.264 mp4 (default; --webm-only to skip)
 ```
 
 > Consumers (e.g. the seedbed substrate seed) should invoke
 > `~/workspace/plow-seedlab-broll-terminal-and-browser/browser/seedrec/seedrec.mjs`
 > (the substrate seed was updated to this path). The terminal recorder is the DEFAULT for substrate
-> panes (asciinema, ~0% CPU); `seedrec` is opt-in only when a real browser `.webm` is needed.
+> panes (asciinema, ~0% CPU); `seedrec` is opt-in only when a real browser video (H.264 mp4) is needed.
 
 ## Layout
 

@@ -14,8 +14,9 @@ A host ends with the **seedrec browser recorder installed and proven** — the
 opt-in tool that records a seedbed's browser/UI evidence path to host disk as
 real video. seedrec is a host-side Playwright daemon: it opens a node's `ttyd`
 or browser target URL in headless Chromium and records it with Chromium's
-**native `recordVideo`** screencast encoder (a true `.webm`, never
-screenshot-stitching).
+**native `recordVideo`** screencast encoder (never screenshot-stitching). Chromium
+captures VP9-in-`.webm` (the raw intermediate); the **deliverable is H.264 mp4 by
+default** — the universally-playable codec (Safari/QuickTime cannot play VP9 webm).
 
 Default seedbed terminal recording is **asciinema**, not seedrec. Once this
 seed is hydrated, a seedbed/test that explicitly exercises UI/browser behavior
@@ -56,13 +57,17 @@ All observable, proven by `## Verify`:
   (or none) is REJECTED with exit 1** and does not touch the recording. The
   daemon likewise ignores a malformed `control.json` (logs `IGNORED invalid
   control`). Agents never stop a recording on their own judgment.
-- **Finalization is a playable video + manifest.** On a valid stop the daemon
-  writes `$REC_ROOT/<node>/<node>-full.webm` (single segment copied, or multiple
-  segments losslessly concatenated via `ffmpeg -c copy`) and `manifest.json`
-  carrying `stop_reason`, the segment list, and an `ffprobe` probe with
-  `format.duration > 0`. `--mp4` additionally transcodes `<node>-full.mp4`
-  (libx264) and updates the manifest. The `stop` CLI blocks until `manifest.json`
-  appears (its finalization proof), up to 120s.
+- **Finalization delivers an H.264 mp4 (the STANDARD) + manifest.** Chromium's
+  `recordVideo` captures VP9-in-`.webm`, which **Safari/QuickTime CANNOT play** — so
+  the `.webm` is only the raw intermediate. On a valid stop the daemon concatenates
+  segments losslessly (`ffmpeg -c copy`) → `$REC_ROOT/<node>/<node>-full.webm`, writes
+  `manifest.json` (fast proof: `stop_reason`, segment list, `ffprobe` probe with
+  `format.duration > 0`), then **by default** transcodes the deliverable
+  `$REC_ROOT/<node>/<node>-full.mp4` (**H.264, `-pix_fmt yuv420p -movflags +faststart`**
+  — universally playable) and repoints `manifest.video` to it. Pass `--webm-only` to
+  skip the transcode (rarely wanted). **Always upload/hand off the `.mp4`, never the
+  raw `.webm`.** The `stop` CLI blocks until `manifest.json` appears (finalization
+  proof), up to 120s; the mp4 lands right after.
 - **Crash-resilient, never self-stops.** If the recording browser/page crashes,
   the daemon salvages the in-flight segment, rotates to the next `seg-NNN`, and
   resumes (growing backoff on a crashloop) — it only ever exits on a valid stop
@@ -86,7 +91,7 @@ All observable, proven by `## Verify`:
 | `REC_ROOT` | no | `$HOME/workspace/seedlab/recordings` | `[ -d "${REC_ROOT:-$HOME/workspace/seedlab/recordings}" ] \|\| true` | "Where recordings land: `$REC_ROOT/<node>/`. **Hardcoded in `seedrec.mjs`** as `~/workspace/seedlab/recordings` (`ROOT`) — changing it means editing the recorder, so keep the default unless you also patch `ROOT`." |
 | Node.js ≥ 18 | yes | none | `node -e 'process.exit(process.versions.node.split(".")[0]>=18?0:1)' 2>/dev/null` | "Node 18+ runs the recorder + Playwright. macOS: `brew install node`. Debian/Ubuntu: NodeSource `setup_22.x`." |
 | Playwright + Chromium | yes | installed by Step 2 | `[ -d "${SEEDREC_DIR:-$HOME/workspace/seedlab/seedrec}/node_modules/playwright" ]` | "Step 2 runs `npm install` in `$SEEDREC_DIR` then `npx playwright install chromium`. The recorder needs the Chromium build (native `recordVideo`)." |
-| `ffmpeg` + `ffprobe` | yes | none | `command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null` | "`ffmpeg` losslessly concatenates multi-segment recordings + does the optional `--mp4` transcode; `ffprobe` writes the manifest's duration/size probe. macOS: `brew install ffmpeg`. Debian/Ubuntu: `apt install ffmpeg`." |
+| `ffmpeg` + `ffprobe` | yes | none | `command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null` | "`ffmpeg` losslessly concatenates multi-segment recordings + does the default H.264 `--mp4` transcode (opt out with `--webm-only`); `ffprobe` writes the manifest's duration/size probe. macOS: `brew install ffmpeg`. Debian/Ubuntu: `apt install ffmpeg`." |
 | A recordable `ttyd`/HTTP target | for Verify only | seed stands up a throwaway | — | "To PROVE the opt-in browser recorder, Verify needs a URL to record. The seed stands up a short-lived local target itself (a `ttyd` attached to a shell if `ttyd` is on PATH, else `python3 -m http.server`). In production/UI tests the URL is the explicit browser/ttyd target the seed wants captured." |
 
 Substrate assumptions: macOS (Darwin) or Linux, a writable `$HOME/workspace`,
@@ -193,7 +198,7 @@ Print for the human, the exact opt-in browser-recorder lifecycle commands:
   `node "$SEEDREC_DIR/seedrec.mjs" start <node> --url <ttyd-url> [--width 1920] [--height 1080]`
 - **Status:** `node "$SEEDREC_DIR/seedrec.mjs" status [<node>]`
 - **Stop (CEO-driven ONLY — finalizes the video):**
-  `node "$SEEDREC_DIR/seedrec.mjs" stop <node> --reason approved-retire|ceo-request [--mp4]`
+  `node "$SEEDREC_DIR/seedrec.mjs" stop <node> --reason approved-retire|ceo-request [--webm-only]`
 - **Output:** `$REC_ROOT/<node>/<node>-full.webm` (+ `manifest.json`, + optional
   `.mp4`) — on host disk, survives `docker rm -f <node>`.
 
@@ -253,23 +258,25 @@ approved-retire|ceo-request` and exit **1**, and `status` still says
 **4. Stop with a valid CEO signal → playable video on disk.**
 
 ```sh
-node "$SEEDREC_DIR/seedrec.mjs" stop seedrec-verify --reason ceo-request --mp4
+node "$SEEDREC_DIR/seedrec.mjs" stop seedrec-verify --reason ceo-request
 # the stop CLI blocks until manifest.json appears, then prints it
 cat "$REC_ROOT/seedrec-verify/manifest.json"
 ffprobe -v quiet -show_entries format=duration,size -of json \
-  "$REC_ROOT/seedrec-verify/seedrec-verify-full.webm"
+  "$REC_ROOT/seedrec-verify/seedrec-verify-full.mp4"
 ```
 
 Judge — ALL must hold:
-- `$REC_ROOT/seedrec-verify/seedrec-verify-full.webm` exists and is non-empty;
+- `$REC_ROOT/seedrec-verify/seedrec-verify-full.mp4` (the H.264 **deliverable**) exists,
+  is non-empty, and `ffprobe` reports its codec is `h264` (NOT `vp9`) — this is the exact
+  regression the default guards against (VP9 webm is unplayable in Safari/QuickTime);
 - `ffprobe` reports `format.duration` **> 0** (a real, playable video — roughly
   the ~25s the run lasted, not a zero-length stub);
 - `manifest.json` carries `"stop_reason": "ceo-request"`, the `segments` list,
-  and a `video_probe` with the same duration;
+  a `video_probe` with the same duration, and `"video"` pointing at the `.mp4`;
 - `status` now reports `DEAD`/`stopped` for the node (the daemon exited cleanly
   on the valid signal, having recorded the whole lifetime up to it);
-- with `--mp4`, `seedrec-verify-full.mp4` also exists (manifest's `mp4` updated
-  from `"transcoding"` to the file path).
+- the raw `seedrec-verify-full.webm` (VP9 intermediate) also exists — but is NOT what
+  you hand off. (`--webm-only` would skip the mp4; don't, unless a caller truly wants raw.)
 
 **5. (Optional, strongest) Eyeball playback.** Open the `.webm`/`.mp4` in a
 player or a browser (`file://` or via the host-mapped path) and confirm it shows
@@ -312,7 +319,7 @@ Otherwise state which check failed + evidence, then
 **Symptom: `stop` hangs then says `daemon did not finalize within 120s`.**
 - Detect: no `manifest.json` after 120s.
 - Fix: check `recorder.log`; usually an `ffmpeg` failure during multi-segment
-  concat or `--mp4` transcode (confirm `ffmpeg`/`ffprobe` on PATH). The webm
+  concat or H.264 mp4 transcode (confirm `ffmpeg`/`ffprobe` on PATH). The webm
   segments are still on disk under `segments/` and can be concatenated manually
   (`ffmpeg -f concat -safe 0 -i concat.txt -c copy <node>-full.webm`).
 
