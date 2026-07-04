@@ -115,23 +115,52 @@ natively (aspect 1.773 ≈ 16:9). A scale-to-FILL to 1920×1080 crops ~3 px. Edg
 To change font: render a 2-line probe cast at two font sizes and two geometries,
 measure the gif dims with `ffprobe`, and re-solve the two constants above.
 
-## 5. Prerequisites
+## 5. Render backend & performance
+
+**Pin `agg ≥ 1.9.0`.** agg 1.9 makes **swash** the default frame-rendering backend
+(`--renderer swash`, the value this pipeline relies on). Swash is both fast **and**
+glyph-correct. The old `fontdue` rasterizer that earlier agg builds shipped is **gone
+in 1.9 and was buggy** before that (glyph positioning/advance drift on Nerd-Font TUI
+codepoints — exactly the box-drawing/spinner glyphs this seed feeds it). Do not run an
+older agg hoping to pick fontdue: pin 1.9.0+ and take the swash default.
+
+**Render is faster than realtime.** With swash, agg renders the cast to frames at
+**~3.2× realtime** — a 10 s clip renders in ~3 s of wall time on Apple silicon. The
+capture (§3) is genuinely realtime (it's a live PTY recording, bounded by how long the
+walkthrough takes); only the render stage is sped up. Net: for these short B-rolls the
+render is never the bottleneck.
+
+**Idle-collapse.** agg's `--idle-time-limit` (this pipeline sets `IDLE_LIMIT=2`, vs
+agg's default 5) collapses any idle gap in the cast down to ≤2 s. Dead air between
+typed commands — thinking pauses, `sleep`s in the drive — is squeezed out, so the clip
+stays tight and the render has fewer duplicate frames to emit. Tune per drive.
+
+**Optional: parallel-tiling.** You can split the cast into time ranges at the agg level
+(`agg --select POS..POS` per worker, one gif per tile) and render the tiles with
+parallel agg workers, then concat the encoded segments. Measured speedup is only
+**+1.29×** over single-process swash, and it plateaus there: the **Apple HW encoder
+(`h264_videotoolbox`) is the ceiling** — past a couple of workers the videotoolbox
+encode, not agg, bounds wall-clock, so more tiles stop helping. Given swash already
+renders at 3.2× realtime, tiling is **not worth it** for clips this short; it's
+documented only for long-form captures where the render actually dominates.
+
+## 6. Prerequisites
 
 - macOS (Apple silicon) for `h264_videotoolbox`. Set `ENCODER=libx264` elsewhere.
-- `tmux`, `asciinema` (≥3), `agg` (agg ≥1.7), `ffmpeg`, `python3`.
-  `brew install tmux asciinema agg ffmpeg`
+- `tmux`, `asciinema` (≥3), **`agg` ≥1.9.0** (swash default — see §5), `ffmpeg`,
+  `python3`.  `brew install tmux asciinema agg ffmpeg`
 - The operator's `~/.tmux.conf` for the Dracula look (status block, base-index 1,
   plugins via TPM). Without it you still get a clean 16:9 clip, just default tmux
   styling. The bundled Nerd Font is used for rendering regardless of system fonts.
 
-## 6. Verify (exit code is the truth)
+## 7. Verify (exit code is the truth)
 
 `record-terminal-broll.sh` asserts the output is exactly 1920×1080 and prints
 `✅ TRUE 16:9 terminal B-roll`. To prove content fills the frame (no border), sample
 the final frame's edges — the Dracula status bar must span the full width (green
 session block hard-left, CPU/RAM/clock hard-right). On success: `SEED_RESULT=DONE`.
 
-## 7. Provenance
+## 8. Provenance
 
 This seed is the packaged form of the method behind plow card `978ee4e2c817`
 (CEO-approved terminal B-roll). The scripts here are the literal ones that produced
